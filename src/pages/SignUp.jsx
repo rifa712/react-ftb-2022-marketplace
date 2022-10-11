@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth'
 import { setDoc, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.config'
+import OAuth from '../components/OAuth'
 
 const SignUp = () => {
   const [showPassword, setShowPassword] = useState(false)
@@ -121,6 +122,7 @@ const SignUp = () => {
           </form>
 
           {/* google auth components */}
+          <OAuth />
 
           <Link to='/sign-in' className='registerLink'>
             Sign In Instead

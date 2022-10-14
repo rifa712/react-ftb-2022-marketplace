@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
 // components
 import Spinner from '../components/Spinner'
+import { toast, ToastContainer } from 'react-toastify'
 
 const CreateListing = () => {
   // state
@@ -66,9 +68,55 @@ const CreateListing = () => {
     return <Spinner />
   }
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault()
-    console.log(formData)
+    setLoading(true)
+
+    if (discountedPrice >= regularPrice) {
+      setLoading(false)
+      toast.error('Discounted Price needs to be less than regular price')
+
+      return
+    }
+
+    if (images.length > 6) {
+      setLoading(false)
+      toast.error('Max 6 images')
+      return
+    }
+
+    let geolocation = {}
+    let location
+
+    if (geolocationEnable) {
+      const params = {
+        access_key: process.env.REACT_APP_POINSTACK_KEY,
+        query: address,
+      }
+
+      const res = await axios.get('http://api.positionstack.com/v1/forward', {
+        params,
+      })
+      const data = res.data
+      console.log(data)
+
+      geolocation.lat = data.data[0]?.latitude ?? 0
+      geolocation.lng = data.data[0]?.longitude ?? 0
+
+      location = data.data[0] ? data.data[0]?.label : undefined
+
+      if (location === undefined || location.includes('undefined')) {
+        setLoading(false)
+        toast.error('Please enter a correct address')
+        return
+      }
+    } else {
+      geolocation.lat = latitude
+      geolocation.lng = longitude
+      location = address
+    }
+
+    setLoading(false)
   }
 
   const onMutate = (e) => {

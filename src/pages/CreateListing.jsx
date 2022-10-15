@@ -9,12 +9,7 @@ import {
   getDownloadURL,
 } from 'firebase/storage'
 import { db } from '../firebase.config'
-import {
-  addDoc,
-  addDock,
-  collection,
-  serverTimestamp,
-} from 'firebase/firestore'
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { v4 as uuidv4 } from 'uuid'
 // components
 import Spinner from '../components/Spinner'
@@ -112,7 +107,6 @@ const CreateListing = () => {
         params,
       })
       const data = res.data
-      console.log(data)
 
       geolocation.lat = data.data[0]?.latitude ?? 0
       geolocation.lng = data.data[0]?.longitude ?? 0
@@ -191,8 +185,7 @@ const CreateListing = () => {
 
     delete formDataCopy.images
     delete formDataCopy.address
-    location && (formDataCopy.location = location)
-    !formDataCopy.offer && delete formDataCopy.discountedPrice
+    formDataCopy.location = address
 
     const docRef = await addDoc(collection(db, 'listings'), formDataCopy)
 

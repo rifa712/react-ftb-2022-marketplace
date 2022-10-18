@@ -6,7 +6,7 @@ import 'react-toastify/dist/ReactToastify.css'
 import Navbar from './components/Navbar'
 import PrivateRoutes from './components/PrivateRoutes'
 // Leaflet
-import { MapContainer, MArker, Popup, TileLayer } from 'react-leaflet'
+// import { MapContainer, MArker, Popup, TileLayer } from 'react-leaflet'
 // pages
 import ForgotPassword from './pages/ForgotPassword'
 import Offers from './pages/Offers'

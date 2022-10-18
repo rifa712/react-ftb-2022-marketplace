@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
+// import axios from 'axios'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -100,20 +100,23 @@ const CreateListing = () => {
     let location
 
     if (geolocationEnable) {
-      const params = {
-        access_key: process.env.REACT_APP_POSITIONSTACK_KEY,
-        query: address,
-      }
+      // const params = {
+      //   access_key: process.env.REACT_APP_POSITIONSTACK_KEY,
+      //   query: address,
+      // }
 
-      const res = await axios.get('http://api.positionstack.com/v1/forward', {
-        params,
-      })
-      const data = res.data
+      const geocodeAPI = process.env.REACT_APP_GEOAPIFY_KEY
 
-      geolocation.lat = data.data[0]?.latitude ?? 0
-      geolocation.lng = data.data[0]?.longitude ?? 0
+      const res = await fetch(
+        `https://api.geoapify.com/v1/geocode/search?text=${address}&format=json&apiKey=${geocodeAPI}`
+      )
+      const data = await res.json()
+      console.log(data.results[0])
 
-      location = data.data[0] ? data.data[0]?.label : undefined
+      geolocation.lat = data.results[0]?.lat ?? 0
+      geolocation.lng = data.results[0]?.lon ?? 0
+
+      location = address
 
       if (location === undefined || location.includes('undefined')) {
         setLoading(false)

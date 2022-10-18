@@ -101,16 +101,13 @@ const CreateListing = () => {
 
     if (geolocationEnable) {
       const params = {
-        apiKey: process.env.REACT_APP_GEOCODE_KEY,
+        access_key: process.env.REACT_APP_POSITIONSTACK_KEY,
         query: address,
       }
 
-      const res = await axios.get(
-        'https://api.geoapify.com/v1/geocode/search',
-        {
-          params,
-        }
-      )
+      const res = await axios.get('http://api.positionstack.com/v1/forward', {
+        params,
+      })
       const data = res.data
 
       geolocation.lat = data.data[0]?.latitude ?? 0

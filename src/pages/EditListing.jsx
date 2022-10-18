@@ -1,25 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import { useNavigate, useParams } from 'react-router-dom'
+// firebase
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { useNavigate } from 'react-router-dom'
 import {
   getStorage,
   ref,
   uploadBytesResumable,
   getDownloadURL,
+  deleteObject, // TODO: Import deleteObject function from firebase/storage
 } from 'firebase/storage'
+import { doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.config'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+// util
 import { v4 as uuidv4 } from 'uuid'
 // components
 import Spinner from '../components/Spinner'
 import { toast } from 'react-toastify'
 
-const CreateListing = () => {
+const EditListing = () => {
   // state
+  const [listing, setListing] = useState(null)
   // eslint-disable-next-line
   const [geolocationEnable, setGeolocationEnable] = useState(true)
   const [loading, setLoading] = useState(false)
+  // TODO: instantiate state as an array for Images the user wants to delete
+  const [imagesToRemove, setImagesToRemove] = useState([])
+
   const [formData, setFormData] = useState({
     type: 'rent',
     name: '',
@@ -53,8 +60,42 @@ const CreateListing = () => {
   } = formData
   const auth = getAuth()
   const navigate = useNavigate()
+  const params = useParams()
   const isMounted = useRef(true)
 
+  //   redirect if listing its not user
+  useEffect(() => {
+    if (listing && listing.userRef !== auth.currentUser.uid) {
+      toast.error('You cannot edit that listing')
+      navigate('/')
+    }
+    // eslint-disable-next-line
+  }, [])
+
+  //   Fetch listing to edit
+  useEffect(() => {
+    setLoading(true)
+    const fetchListing = async () => {
+      const docRef = doc(db, 'listings', params.listingId)
+      const docSnap = await getDoc(docRef)
+
+      if (docSnap.exists()) {
+        setListing(docSnap.data())
+        setFormData({
+          ...docSnap.data(),
+          address: docSnap.data().location,
+        })
+        setLoading(false)
+      } else {
+        navigate('/')
+        toast.error('Listing does not exist')
+      }
+    }
+
+    fetchListing()
+  }, [params.listingId, navigate])
+
+  //   Sets userRef to logged in user
   useEffect(() => {
     if (isMounted) {
       onAuthStateChanged(auth, (user) => {
@@ -90,11 +131,11 @@ const CreateListing = () => {
       return
     }
 
-    if (images.length > 6) {
-      setLoading(false)
-      toast.error('Max 6 images')
-      return
-    }
+    // if (images.length > 6) {
+    //   setLoading(false)
+    //   toast.error('Max 6 images')
+    //   return
+    // }
 
     let geolocation = {}
     let location
@@ -126,13 +167,16 @@ const CreateListing = () => {
       location = address
     }
 
+    // Store image in firebase
     const storeImage = async (image) => {
       return new Promise((resolve, reject) => {
         const storage = getStorage()
         const fileName = `${auth.currentUser.uid}-${image.name}-${uuidv4()}`
 
+        // create storage reference --> pass in storage + path + filename
         const storageRef = ref(storage, 'images/' + fileName)
 
+        // Upload the file metadata
         const uploadTask = uploadBytesResumable(storageRef, image)
 
         // Register three observers:
@@ -159,11 +203,12 @@ const CreateListing = () => {
             }
           },
           (error) => {
+            console.log(error)
             reject(error)
           },
           () => {
             // Handle successful uploads on complete
-            // For instance, get the download URL: https://firebasestorage.googleapis.com/...
+            // For instance, return the download URL: https://firebasestorage.googleapis.com/...
             getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
               resolve(downloadURL)
             })
@@ -172,72 +217,181 @@ const CreateListing = () => {
       })
     }
 
-    const imageUrls = await Promise.all(
-      [...images].map((image) => storeImage(image))
-    ).catch(() => {
+    // TODO: Throw an error if new image TOTAL is not 6 or less
+    const availableImageStorage =
+      6 - listing.imageUrls.length + imagesToRemove.length
+    // Return an error only if new images were added AND the total files exceeds 6
+    if (images && images.length > availableImageStorage) {
       setLoading(false)
-      toast.error('Images not uploaded')
+      toast.error(
+        'Image Upload failed - Too many total images for this listing'
+      )
       return
+    }
+
+    // TODO: IF new images were uploaded, Store the returned imageUrls in a new array
+    let newImageUrls
+    if (images) {
+      newImageUrls = await Promise.all(
+        [...images].map((image) => storeImage(image))
+      ).catch(() => {
+        setLoading(false)
+        toast.error('Images not uploaded')
+        return
+      })
+    }
+
+    // TODO: Function to Delete an Image from Storage from Storage
+    const deleteImage = async (imgUrl) => {
+      // Split Url to get the filename in the middle
+      let fileName = imgUrl.split('images%2F')
+      fileName = fileName[1].split('?alt')
+      fileName = fileName[0]
+
+      const storage = getStorage()
+
+      // Create a reference to the file to delete
+      const imgRef = ref(storage, `images/${fileName}`)
+
+      // Returns a promise
+      return deleteObject(imgRef)
+    }
+
+    //TODO: Delete each image in imagesToRemove from storage
+    imagesToRemove.forEach(async (imgUrl) => {
+      await deleteImage(imgUrl) // Handle the returned promise
+        .then(() => {
+          toast.success('Image was successfully removed from storage')
+        })
+        .catch((error) => {
+          // console.log(error)
+          // toast.error('Deletion failed')
+          setLoading(false)
+        })
     })
 
+    //TODO: Remove all imagesToRemove from current imageUrls for this listing
+    const remainingListingImages = listing.imageUrls.filter(
+      (val) => !imagesToRemove.includes(val)
+    )
+
+    //TODO: Merge ImageUrls with newImageUrls (if defined) --> Then Delete newImageUrls
+    let mergedImageUrls
+    if (newImageUrls) {
+      mergedImageUrls = [...remainingListingImages, ...newImageUrls]
+    } else {
+      mergedImageUrls = [...remainingListingImages]
+    }
+
+    // Create a separate copy of the formData, then add/delete fields as needed to match collection keys
     const formDataCopy = {
       ...formData,
-      imageUrls,
+      imageUrls: mergedImageUrls,
       geolocation,
       timestamp: serverTimestamp(),
     }
 
+    // Removes any leading zeros from price
+    if (formDataCopy.discountedPrice) {
+      formDataCopy.discountedPrice = formData.discountedPrice.toString()
+    }
+    formDataCopy.regularPrice = formData.regularPrice.toString()
+
+    formDataCopy.location = address
     delete formDataCopy.images
     delete formDataCopy.address
-    formDataCopy.location = address
+    !formDataCopy.offer && delete formDataCopy.discountedPrice // Remove discountedPrice if no offer
 
-    const docRef = await addDoc(collection(db, 'listings'), formDataCopy)
-
+    // Update in firestore
+    const docRef = doc(db, 'listings', params.listingId)
+    await updateDoc(docRef, formDataCopy)
     setLoading(false)
-
     toast.success('Listing saved')
     navigate(`/category/${formDataCopy.type}/${docRef.id}`)
   }
 
+  // Form Data Changed
   const onMutate = (e) => {
-    let bool = null
+    // let boolean = null;
+    let newValue = e.target.value
 
+    // Edge Cases to prevent booleans from converting to strings
     if (e.target.value === 'true') {
-      bool = true
+      newValue = true
     }
-
     if (e.target.value === 'false') {
-      bool = false
+      newValue = false
     }
 
     // Files
     if (e.target.files) {
-      setFormData((prev) => ({
-        ...prev,
+      setFormData((prevState) => ({
+        ...prevState,
         images: e.target.files,
       }))
     }
 
-    // text
+    // All other
     if (!e.target.files) {
-      setFormData((prev) => ({
-        ...prev,
-        [e.target.id]: bool ?? e.target.value,
+      setFormData((prevState) => ({
+        ...prevState,
+        [e.target.id]: newValue,
       }))
     }
   }
 
+  // TODO: handleChange on image checkboxes
+  const handleChange = (e) => {
+    if (e.target.checked) {
+      // Case 1 : The user checks the box
+      setImagesToRemove([...imagesToRemove, e.target.value])
+    } else {
+      // Case 2  : The user unchecks the box
+      setImagesToRemove((current) =>
+        current.filter((url) => {
+          return url !== e.target.value
+        })
+      )
+    }
+  }
+
+  // const onMutate = (e) => {
+  //   let bool = null
+
+  //   if (e.target.value === 'true') {
+  //     bool = true
+  //   }
+
+  //   if (e.target.value === 'false') {
+  //     bool = false
+  //   }
+
+  //   // Files
+  //   if (e.target.files) {
+  //     setFormData((prev) => ({
+  //       ...prev,
+  //       images: e.target.files,
+  //     }))
+  //   }
+
+  //   // text
+  //   if (!e.target.files) {
+  //     setFormData((prev) => ({
+  //       ...prev,
+  //       [e.target.id]: bool ?? e.target.value,
+  //     }))
+  //   }
+  // }
+
   return (
     <div className='profile'>
       <header>
-        <p className='pageHeader'>Create a listing</p>
+        <p className='pageHeader'>Edit Listing</p>
       </header>
 
       <main>
         <form onSubmit={onSubmit}>
-          {/* Form */}
-          {/* Sell or Rent */}
-          <label className='formLabel'>Sell/Rent</label>
+          <label className='formLabel'>Sell / Rent</label>
           <div className='formButtons'>
             <button
               type='button'
@@ -259,48 +413,48 @@ const CreateListing = () => {
             </button>
           </div>
 
-          {/* Name */}
           <label className='formLabel'>Name</label>
           <input
-            type='text'
             className='formInputName'
+            type='text'
             id='name'
             value={name}
             onChange={onMutate}
             maxLength='32'
-            minLength='4'
+            minLength='10'
             required
           />
-          {/* Bedrooms & Bathrooms */}
+
           <div className='formRooms flex'>
             <div>
               <label className='formLabel'>Bedrooms</label>
               <input
-                type='number'
                 className='formInputSmall'
+                type='number'
                 id='bedrooms'
                 value={bedrooms}
                 onChange={onMutate}
                 min='1'
+                max='50'
                 required
               />
             </div>
             <div>
               <label className='formLabel'>Bathrooms</label>
               <input
-                type='number'
                 className='formInputSmall'
+                type='number'
                 id='bathrooms'
                 value={bathrooms}
                 onChange={onMutate}
                 min='1'
+                max='50'
                 required
               />
             </div>
           </div>
 
-          {/* Parking Spot */}
-          <label className='formLabel'>Parking Spot</label>
+          <label className='formLabel'>Parking spot</label>
           <div className='formButtons'>
             <button
               className={parking ? 'formButtonActive' : 'formButton'}
@@ -326,7 +480,6 @@ const CreateListing = () => {
             </button>
           </div>
 
-          {/* Furnished */}
           <label className='formLabel'>Furnished</label>
           <div className='formButtons'>
             <button
@@ -335,8 +488,6 @@ const CreateListing = () => {
               id='furnished'
               value={true}
               onClick={onMutate}
-              min='1'
-              max='50'
             >
               Yes
             </button>
@@ -355,7 +506,6 @@ const CreateListing = () => {
             </button>
           </div>
 
-          {/* Address */}
           <label className='formLabel'>Address</label>
           <textarea
             className='formInputAddress'
@@ -365,13 +515,14 @@ const CreateListing = () => {
             onChange={onMutate}
             required
           />
+
           {!geolocationEnable && (
             <div className='formLatLng flex'>
               <div>
                 <label className='formLabel'>Latitude</label>
                 <input
-                  type='text'
                   className='formInputSmall'
+                  type='number'
                   id='latitude'
                   value={latitude}
                   onChange={onMutate}
@@ -381,8 +532,8 @@ const CreateListing = () => {
               <div>
                 <label className='formLabel'>Longitude</label>
                 <input
-                  type='text'
                   className='formInputSmall'
+                  type='number'
                   id='longitude'
                   value={longitude}
                   onChange={onMutate}
@@ -392,7 +543,6 @@ const CreateListing = () => {
             </div>
           )}
 
-          {/* Offer */}
           <label className='formLabel'>Offer</label>
           <div className='formButtons'>
             <button
@@ -417,7 +567,6 @@ const CreateListing = () => {
             </button>
           </div>
 
-          {/* Regular Price */}
           <label className='formLabel'>Regular Price</label>
           <div className='formPriceDiv'>
             <input
@@ -433,7 +582,6 @@ const CreateListing = () => {
             {type === 'rent' && <p className='formPriceText'>$ / Month</p>}
           </div>
 
-          {/* Discounted Price */}
           {offer && (
             <>
               <label className='formLabel'>Discounted Price</label>
@@ -450,11 +598,46 @@ const CreateListing = () => {
             </>
           )}
 
-          {/* Image */}
-          <label className='formLabel'>Images</label>
-          <p className='imagesInfo'>
-            The first image will be the cover (max 6).
+          {/* TODO: Display Current Images (Noting Cover) with Delete Buttons --> Then display "Add Image" Option */}
+          <label className='formLabel'>Listing Images</label>
+          <p style={{ paddingLeft: '10px', fontSize: '0.8rem' }}>
+            DELETE: Check the box of each image you wish to delete
           </p>
+          <div className='editListingImgContainer'>
+            {listing?.imageUrls &&
+              listing.imageUrls.map((img, index) => (
+                <div
+                  key={index}
+                  className='editListingImg'
+                  style={{
+                    background: `url('${img}') center no-repeat`,
+                    backgroundSize: 'cover',
+                  }}
+                >
+                  {index === 0 && <p className='editListingImgText'>Cover</p>}
+
+                  <input
+                    type='checkbox'
+                    id='imageDelete'
+                    name='imageDelete'
+                    value={img}
+                    onChange={handleChange}
+                  />
+                </div>
+              ))}
+          </div>
+          {/* Displays the number of remaining spots available after checked images are deleted */}
+          <p style={{ paddingLeft: '10px', fontSize: '0.8rem' }}>
+            ADD: Choose files to add. (
+            {listing?.imageUrls &&
+              imagesToRemove &&
+              ` ${
+                6 - listing.imageUrls.length + imagesToRemove.length
+              } image slots remaining`}{' '}
+            - Max 6 total )
+          </p>
+          {/*  */}
+
           <input
             className='formInputFile'
             type='file'
@@ -463,17 +646,14 @@ const CreateListing = () => {
             max='6'
             accept='.jpg,.png,.jpeg'
             multiple
-            required
           />
-
           <button type='submit' className='primaryButton createListingButton'>
-            Create Listing
+            Update Listing
           </button>
-          {/* End Form */}
         </form>
       </main>
     </div>
   )
 }
 
-export default CreateListing
+export default EditListing

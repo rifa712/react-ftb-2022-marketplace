@@ -820,3 +820,34 @@ button {
   font-size: 0.8rem;
   opacity: 0.75;
 }
+
+/* Edit Listing */
+.editListingImgContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 25px;
+}
+
+.editListingImg [type='checkbox'] {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  height: 30px;
+  width: 30px;
+}
+
+.editListingImg {
+  width: 290px;
+  height: 230px;
+  border-radius: 25px;
+  position: relative;
+}
+
+.editListingImgText {
+  position: absolute;
+  top: 5px;
+  padding: 10px;
+  font-weight: bold;
+  color: white;
+  background-color: black;
+}

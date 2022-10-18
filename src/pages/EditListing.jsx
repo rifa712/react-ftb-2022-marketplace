@@ -146,7 +146,7 @@ const EditListing = () => {
         query: address,
       }
 
-      const res = await axios.get('http://api.positionstack.com/v1/forward', {
+      const res = await axios.get('https://api.positionstack.com/v1/forward', {
         params,
       })
       const data = res.data

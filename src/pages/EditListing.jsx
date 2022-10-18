@@ -152,7 +152,6 @@ const EditListing = () => {
         `https://api.geoapify.com/v1/geocode/search?text=${address}&format=json&apiKey=${geocodeAPI}`
       )
       const data = await res.json()
-      console.log(data.results[0])
 
       geolocation.lat = data.results[0]?.lat ?? 0
       geolocation.lng = data.results[0]?.lon ?? 0
